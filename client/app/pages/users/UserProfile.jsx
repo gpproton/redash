@@ -2,13 +2,13 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { react2angular } from 'react2angular';
 
-import { EmailSettingsWarning } from '@/components/EmailSettingsWarning';
+import EmailSettingsWarning from '@/components/EmailSettingsWarning';
 import UserEdit from '@/components/users/UserEdit';
 import UserShow from '@/components/users/UserShow';
 import LoadingState from '@/components/items-list/components/LoadingState';
+import wrapSettingsTab from '@/components/SettingsWrapper';
 
 import { User } from '@/services/user';
-import settingsMenu from '@/services/settingsMenu';
 import { $route } from '@/services/ng';
 import { currentUser } from '@/services/auth';
 import PromiseRejectionError from '@/lib/promise-rejection-error';
@@ -47,7 +47,7 @@ class UserProfile extends React.Component {
     const UserComponent = canEdit ? UserEdit : UserShow;
     return (
       <React.Fragment>
-        <EmailSettingsWarning featureName="invite emails" />
+        <EmailSettingsWarning featureName="invite emails" className="m-b-20" adminOnly />
         <div className="row">
           {user ? <UserComponent user={user} /> : <LoadingState className="" />}
         </div>
@@ -57,13 +57,11 @@ class UserProfile extends React.Component {
 }
 
 export default function init(ngModule) {
-  settingsMenu.add({
+  ngModule.component('pageUserProfile', react2angular(wrapSettingsTab({
     title: 'Account',
     path: 'users/me',
     order: 7,
-  });
-
-  ngModule.component('pageUserProfile', react2angular(UserProfile));
+  }, UserProfile)));
 }
 
 init.init = true;

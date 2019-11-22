@@ -86,6 +86,7 @@ class Athena(BaseQueryRunner):
                 },
             },
             'required': ['region', 's3_staging_dir'],
+            'extra_options': ['glue'],
             'order': ['region', 's3_staging_dir', 'schema', 'work_group'],
             'secret': ['aws_secret_key']
         }
@@ -101,6 +102,8 @@ class Athena(BaseQueryRunner):
                     'title': 'KMS Key',
                 },
             })
+            schema['extra_options'].append('encryption_option')
+            schema['extra_options'].append('kms_key')
 
         if ASSUME_ROLE:
             del schema['properties']['aws_access_key']
@@ -180,7 +183,7 @@ class Athena(BaseQueryRunner):
                         schema[table_name] = {'name': table_name, 'columns': column}
                         for partition in table.get('PartitionKeys', []):
                             schema[table_name]['columns'].append(partition['Name'])
-        return schema.values()
+        return list(schema.values())
 
     def get_schema(self, get_stats=False):
         if self.configuration.get('glue', False):
@@ -204,7 +207,7 @@ class Athena(BaseQueryRunner):
                 schema[table_name] = {'name': table_name, 'columns': []}
             schema[table_name]['columns'].append(row['column_name'])
 
-        return schema.values()
+        return list(schema.values())
 
     def run_query(self, query, user):
         cursor = pyathena.connect(

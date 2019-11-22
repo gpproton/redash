@@ -5,7 +5,7 @@ import Input from 'antd/lib/input';
 import InputNumber from 'antd/lib/input-number';
 import DateParameter from '@/components/dynamic-parameters/DateParameter';
 import DateRangeParameter from '@/components/dynamic-parameters/DateRangeParameter';
-import { toString } from 'lodash';
+import { isEqual } from 'lodash';
 import { QueryBasedParameterInput } from './QueryBasedParameterInput';
 
 import './ParameterValueInput.less';
@@ -25,7 +25,6 @@ class ParameterValueInput extends React.Component {
     enumOptions: PropTypes.string,
     queryId: PropTypes.number,
     parameter: PropTypes.any, // eslint-disable-line react/forbid-prop-types
-    allowMultipleValues: PropTypes.bool,
     onSelect: PropTypes.func,
     className: PropTypes.string,
   };
@@ -36,7 +35,6 @@ class ParameterValueInput extends React.Component {
     enumOptions: '',
     queryId: null,
     parameter: null,
-    allowMultipleValues: false,
     onSelect: () => {},
     className: '',
   };
@@ -61,7 +59,7 @@ class ParameterValueInput extends React.Component {
   }
 
   onSelect = (value) => {
-    const isDirty = toString(value) !== toString(this.props.value);
+    const isDirty = !isEqual(value, this.props.value);
     this.setState({ value, isDirty });
     this.props.onSelect(value, isDirty);
   }
@@ -95,16 +93,18 @@ class ParameterValueInput extends React.Component {
   }
 
   renderEnumInput() {
-    const { enumOptions, allowMultipleValues } = this.props;
+    const { enumOptions, parameter } = this.props;
     const { value } = this.state;
     const enumOptionsArray = enumOptions.split('\n').filter(v => v !== '');
+    // Antd Select doesn't handle null in multiple mode
+    const normalize = val => (parameter.multiValuesOptions && val === null ? [] : val);
     return (
       <Select
         className={this.props.className}
-        mode={allowMultipleValues ? 'multiple' : 'default'}
+        mode={parameter.multiValuesOptions ? 'multiple' : 'default'}
         optionFilterProp="children"
         disabled={enumOptionsArray.length === 0}
-        value={value}
+        value={normalize(value)}
         onChange={this.onSelect}
         dropdownMatchSelectWidth={false}
         showSearch
@@ -119,12 +119,12 @@ class ParameterValueInput extends React.Component {
   }
 
   renderQueryBasedInput() {
-    const { queryId, parameter, allowMultipleValues } = this.props;
+    const { queryId, parameter } = this.props;
     const { value } = this.state;
     return (
       <QueryBasedParameterInput
         className={this.props.className}
-        mode={allowMultipleValues ? 'multiple' : 'default'}
+        mode={parameter.multiValuesOptions ? 'multiple' : 'default'}
         optionFilterProp="children"
         parameter={parameter}
         value={value}
@@ -185,7 +185,7 @@ class ParameterValueInput extends React.Component {
     const { isDirty } = this.state;
 
     return (
-      <div className="parameter-input" data-dirty={isDirty || null}>
+      <div className="parameter-input" data-dirty={isDirty || null} data-test="ParameterValueInput">
         {this.renderInput()}
       </div>
     );
