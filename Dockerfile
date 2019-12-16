@@ -40,7 +40,7 @@ RUN apt-get update && \
     freetds-dev \
     libsasl2-dev && \
   apt-get clean && \
-  rm -rf /var/lib/apt/lists/* \
+  rm -rf /var/lib/apt/lists/* && \
   mkdir -p /tmp/oracle
 
 WORKDIR /app
