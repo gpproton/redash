@@ -1,4 +1,4 @@
-FROM redash/redash:preview
+FROM redash/redash:latest
 LABEL maintainer="Godwin peter .O <me@godwin.dev>"
 USER root
 RUN apt-get update  -y && apt-get install -y unzip && mkdir -p /tmp/oracle
