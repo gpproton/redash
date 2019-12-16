@@ -1,9 +1,12 @@
-import { map } from 'lodash';
-import React from 'react';
-import PropTypes from 'prop-types';
-import { react2angular } from 'react2angular';
-import classNames from 'classnames';
-import getTags from '@/services/getTags';
+import { map } from "lodash";
+import React from "react";
+import PropTypes from "prop-types";
+import { react2angular } from "react2angular";
+import Badge from "antd/lib/badge";
+import Menu from "antd/lib/menu";
+import getTags from "@/services/getTags";
+
+import "./TagsList.less";
 
 export class TagsList extends React.Component {
   static propTypes = {
@@ -27,7 +30,7 @@ export class TagsList extends React.Component {
   }
 
   componentDidMount() {
-    getTags(this.props.tagsUrl).then((allTags) => {
+    getTags(this.props.tagsUrl).then(allTags => {
       this.setState({ allTags });
     });
   }
@@ -43,7 +46,7 @@ export class TagsList extends React.Component {
       }
     } else {
       // if the tag is the only selected, deselect it, otherwise select only it
-      if (selectedTags.has(tag) && (selectedTags.size === 1)) {
+      if (selectedTags.has(tag) && selectedTags.size === 1) {
         selectedTags.clear();
       } else {
         selectedTags.clear();
@@ -59,17 +62,19 @@ export class TagsList extends React.Component {
     const { allTags, selectedTags } = this.state;
     if (allTags.length > 0) {
       return (
-        <div className="list-group m-t-10 tags-list tiled">
-          {map(allTags, tag => (
-            <a
-              key={tag.name}
-              className={classNames('list-group-item', 'max-character', { active: selectedTags.has(tag.name) })}
-              onClick={event => this.toggleTag(event, tag.name)}
-            >
-              <span className="badge badge-light">{tag.count}</span>
-              <span className="tags-list__name">{tag.name}</span>
-            </a>
-          ))}
+        <div className="m-t-10 tags-list tiled">
+          <Menu className="invert-stripe-position" mode="inline" selectedKeys={[...selectedTags]}>
+            {map(allTags, tag => (
+              <Menu.Item key={tag.name} className="m-0">
+                <a
+                  className="d-flex align-items-center justify-content-between"
+                  onClick={event => this.toggleTag(event, tag.name)}>
+                  <span className="max-character col-xs-11">{tag.name}</span>
+                  <Badge count={tag.count} />
+                </a>
+              </Menu.Item>
+            ))}
+          </Menu>
         </div>
       );
     }
@@ -78,7 +83,7 @@ export class TagsList extends React.Component {
 }
 
 export default function init(ngModule) {
-  ngModule.component('tagsList', react2angular(TagsList));
+  ngModule.component("tagsList", react2angular(TagsList));
 }
 
 init.init = true;
