@@ -1,6 +1,6 @@
 version: '2'
 x-redash-service: &redash-service
-  image: gpproton/redash:latest
+  image: ./redash
   depends_on:
     - postgres
     - redis
