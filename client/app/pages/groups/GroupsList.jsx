@@ -1,10 +1,12 @@
 import React from "react";
-import { react2angular } from "react2angular";
 
 import Button from "antd/lib/button";
-import { Paginator } from "@/components/Paginator";
+import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
+import Link from "@/components/Link";
+import navigateTo from "@/components/ApplicationArea/navigateTo";
+import Paginator from "@/components/Paginator";
 
-import { wrap as liveItemsList, ControllerType } from "@/components/items-list/ItemsList";
+import { wrap as itemsList, ControllerType } from "@/components/items-list/ItemsList";
 import { ResourceItemsSource } from "@/components/items-list/classes/ItemsSource";
 import { StateStorage } from "@/components/items-list/classes/StateStorage";
 
@@ -16,10 +18,9 @@ import CreateGroupDialog from "@/components/groups/CreateGroupDialog";
 import DeleteGroupButton from "@/components/groups/DeleteGroupButton";
 import wrapSettingsTab from "@/components/SettingsWrapper";
 
-import { Group } from "@/services/group";
+import Group from "@/services/group";
 import { currentUser } from "@/services/auth";
-import navigateTo from "@/services/navigateTo";
-import { routesToAngularRoutes } from "@/lib/utils";
+import routes from "@/services/routes";
 
 class GroupsList extends React.Component {
   static propTypes = {
@@ -30,7 +31,7 @@ class GroupsList extends React.Component {
     Columns.custom(
       (text, group) => (
         <div>
-          <a href={"groups/" + group.id}>{group.name}</a>
+          <Link href={"groups/" + group.id}>{group.name}</Link>
           {group.type === "builtin" && <span className="label label-default m-l-10">built-in</span>}
         </div>
       ),
@@ -42,8 +43,8 @@ class GroupsList extends React.Component {
     Columns.custom(
       (text, group) => (
         <Button.Group>
-          <Button href={`groups/${group.id}`}>Members</Button>
-          {currentUser.isAdmin && <Button href={`groups/${group.id}/data_sources`}>Data Sources</Button>}
+          <Link.Button href={`groups/${group.id}`}>Members</Link.Button>
+          {currentUser.isAdmin && <Link.Button href={`groups/${group.id}/data_sources`}>Data Sources</Link.Button>}
         </Button.Group>
       ),
       {
@@ -74,9 +75,9 @@ class GroupsList extends React.Component {
   ];
 
   createGroup = () => {
-    CreateGroupDialog.showModal().result.then(group => {
-      group.$save().then(newGroup => navigateTo(`/groups/${newGroup.id}`));
-    });
+    CreateGroupDialog.showModal().onClose(group =>
+      Group.create(group).then(newGroup => navigateTo(`groups/${newGroup.id}`))
+    );
   };
 
   onGroupDeleted = () => {
@@ -112,8 +113,10 @@ class GroupsList extends React.Component {
               toggleSorting={controller.toggleSorting}
             />
             <Paginator
+              showPageSizeSelect
               totalCount={controller.totalItemsCount}
-              itemsPerPage={controller.itemsPerPage}
+              pageSize={controller.itemsPerPage}
+              onPageSizeChange={itemsPerPage => controller.updatePagination({ itemsPerPage })}
               page={controller.page}
               onChange={page => controller.updatePagination({ page })}
             />
@@ -124,55 +127,35 @@ class GroupsList extends React.Component {
   }
 }
 
-export default function init(ngModule) {
-  ngModule.component(
-    "pageGroupsList",
-    react2angular(
-      wrapSettingsTab(
-        {
-          permission: "list_users",
-          title: "Groups",
-          path: "groups",
-          order: 3,
+const GroupsListPage = wrapSettingsTab(
+  "Groups.List",
+  {
+    permission: "list_users",
+    title: "Groups",
+    path: "groups",
+    order: 3,
+  },
+  itemsList(
+    GroupsList,
+    () =>
+      new ResourceItemsSource({
+        isPlainList: true,
+        getRequest() {
+          return {};
         },
-        liveItemsList(
-          GroupsList,
-          new ResourceItemsSource({
-            isPlainList: true,
-            getRequest() {
-              return {};
-            },
-            getResource() {
-              return Group.query.bind(Group);
-            },
-            getItemProcessor() {
-              return item => new Group(item);
-            },
-          }),
-          new StateStorage({ orderByField: "name", itemsPerPage: 10 })
-        )
-      )
-    )
-  );
+        getResource() {
+          return Group.query.bind(Group);
+        },
+      }),
+    () => new StateStorage({ orderByField: "name", itemsPerPage: 10 })
+  )
+);
 
-  return routesToAngularRoutes(
-    [
-      {
-        path: "/groups",
-        title: "Groups",
-        key: "groups",
-      },
-    ],
-    {
-      reloadOnSearch: false,
-      template: '<page-groups-list on-error="handleError"></page-groups-list>',
-      controller($scope, $exceptionHandler) {
-        "ngInject";
-
-        $scope.handleError = $exceptionHandler;
-      },
-    }
-  );
-}
-
-init.init = true;
+routes.register(
+  "Groups.List",
+  routeWithUserSession({
+    path: "/groups",
+    title: "Groups",
+    render: pageProps => <GroupsListPage {...pageProps} currentPage="groups" />,
+  })
+);

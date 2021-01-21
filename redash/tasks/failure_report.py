@@ -1,10 +1,12 @@
-import logging
 import datetime
 import re
 from collections import Counter
 from redash.tasks.general import send_mail
 from redash import redis_connection, settings, models
 from redash.utils import json_dumps, json_loads, base_url, render_template
+from redash.worker import get_job_logger
+
+logger = get_job_logger(__name__)
 
 
 def key(user_id):
@@ -88,9 +90,10 @@ def notify_of_failure(message, query):
 
 
 def track_failure(query, error):
-    logging.debug(error)
+    logger.debug(error)
 
     query.schedule_failures += 1
+    query.skip_updated_at = True
     models.db.session.add(query)
     models.db.session.commit()
 

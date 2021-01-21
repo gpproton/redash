@@ -1,14 +1,14 @@
 import { get } from "lodash";
 import React from "react";
-import { react2angular } from "react2angular";
 
 import Button from "antd/lib/button";
 import Modal from "antd/lib/modal";
-import PromiseRejectionError from "@/lib/promise-rejection-error";
-import { Paginator } from "@/components/Paginator";
+import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
+import navigateTo from "@/components/ApplicationArea/navigateTo";
+import Paginator from "@/components/Paginator";
 import QuerySnippetDialog from "@/components/query-snippets/QuerySnippetDialog";
 
-import { wrap as liveItemsList, ControllerType } from "@/components/items-list/ItemsList";
+import { wrap as itemsList, ControllerType } from "@/components/items-list/ItemsList";
 import { ResourceItemsSource } from "@/components/items-list/classes/ItemsSource";
 import { StateStorage } from "@/components/items-list/classes/StateStorage";
 
@@ -16,12 +16,12 @@ import LoadingState from "@/components/items-list/components/LoadingState";
 import ItemsTable, { Columns } from "@/components/items-list/components/ItemsTable";
 import wrapSettingsTab from "@/components/SettingsWrapper";
 
-import { QuerySnippet } from "@/services/query-snippet";
-import navigateTo from "@/services/navigateTo";
+import QuerySnippet from "@/services/query-snippet";
 import { currentUser } from "@/services/auth";
 import { policy } from "@/services/policy";
 import notification from "@/services/notification";
-import { routesToAngularRoutes } from "@/lib/utils";
+import routes from "@/services/routes";
+
 import "./QuerySnippetsList.less";
 
 const canEditQuerySnippet = querySnippet => currentUser.isAdmin || currentUser.id === get(querySnippet, "user.id");
@@ -83,23 +83,22 @@ class QuerySnippetsList extends React.Component {
         if (policy.isCreateQuerySnippetEnabled()) {
           this.showSnippetDialog();
         } else {
-          navigateTo("/query_snippets");
+          navigateTo("query_snippets", true);
         }
       } else {
         QuerySnippet.get({ id: querySnippetId })
-          .$promise.then(this.showSnippetDialog)
-          .catch((error = {}) => {
-            // ANGULAR_REMOVE_ME This code is related to Angular's HTTP services
-            if (error.status && error.data) {
-              error = new PromiseRejectionError(error);
-            }
+          .then(this.showSnippetDialog)
+          .catch(error => {
             this.props.controller.handleError(error);
           });
       }
     }
   }
 
-  saveQuerySnippet = querySnippet => QuerySnippet.save(querySnippet).$promise;
+  saveQuerySnippet = querySnippet => {
+    const saveSnippet = querySnippet.id ? QuerySnippet.save : QuerySnippet.create;
+    return saveSnippet(querySnippet);
+  };
 
   deleteQuerySnippet = (event, querySnippet) => {
     Modal.confirm({
@@ -109,31 +108,33 @@ class QuerySnippetsList extends React.Component {
       okType: "danger",
       cancelText: "No",
       onOk: () => {
-        querySnippet.$delete(
-          () => {
+        QuerySnippet.delete(querySnippet)
+          .then(() => {
             notification.success("Query snippet deleted successfully.");
             this.props.controller.update();
-          },
-          () => {
+          })
+          .catch(() => {
             notification.error("Failed deleting query snippet.");
-          }
-        );
+          });
       },
     });
   };
 
   showSnippetDialog = (querySnippet = null) => {
     const canSave = !querySnippet || canEditQuerySnippet(querySnippet);
-    navigateTo("/query_snippets/" + get(querySnippet, "id", "new"), true, false);
+    navigateTo("query_snippets/" + get(querySnippet, "id", "new"), true);
+    const goToSnippetsList = () => navigateTo("query_snippets", true);
     QuerySnippetDialog.showModal({
       querySnippet,
-      onSubmit: this.saveQuerySnippet,
       readOnly: !canSave,
     })
-      .result.then(() => this.props.controller.update())
-      .finally(() => {
-        navigateTo("/query_snippets", true, false);
-      });
+      .onClose(querySnippet =>
+        this.saveQuerySnippet(querySnippet).then(() => {
+          this.props.controller.update();
+          goToSnippetsList();
+        })
+      )
+      .onDismiss(goToSnippetsList);
   };
 
   render() {
@@ -176,8 +177,10 @@ class QuerySnippetsList extends React.Component {
               toggleSorting={controller.toggleSorting}
             />
             <Paginator
+              showPageSizeSelect
               totalCount={controller.totalItemsCount}
-              itemsPerPage={controller.itemsPerPage}
+              pageSize={controller.itemsPerPage}
+              onPageSizeChange={itemsPerPage => controller.updatePagination({ itemsPerPage })}
               page={controller.page}
               onChange={page => controller.updatePagination({ page })}
             />
@@ -188,61 +191,43 @@ class QuerySnippetsList extends React.Component {
   }
 }
 
-export default function init(ngModule) {
-  ngModule.component(
-    "pageQuerySnippetsList",
-    react2angular(
-      wrapSettingsTab(
-        {
-          permission: "create_query",
-          title: "Query Snippets",
-          path: "query_snippets",
-          order: 5,
+const QuerySnippetsListPage = wrapSettingsTab(
+  "QuerySnippets.List",
+  {
+    permission: "create_query",
+    title: "Query Snippets",
+    path: "query_snippets",
+    order: 5,
+  },
+  itemsList(
+    QuerySnippetsList,
+    () =>
+      new ResourceItemsSource({
+        isPlainList: true,
+        getRequest() {
+          return {};
         },
-        liveItemsList(
-          QuerySnippetsList,
-          new ResourceItemsSource({
-            isPlainList: true,
-            getRequest() {
-              return {};
-            },
-            getResource() {
-              return QuerySnippet.query.bind(QuerySnippet);
-            },
-            getItemProcessor() {
-              return item => new QuerySnippet(item);
-            },
-          }),
-          new StateStorage({ orderByField: "trigger", itemsPerPage: 10 })
-        )
-      )
-    )
-  );
+        getResource() {
+          return QuerySnippet.query.bind(QuerySnippet);
+        },
+      }),
+    () => new StateStorage({ orderByField: "trigger", itemsPerPage: 10 })
+  )
+);
 
-  return routesToAngularRoutes(
-    [
-      {
-        path: "/query_snippets",
-        title: "Query Snippets",
-        key: "query_snippets",
-      },
-      {
-        path: "/query_snippets/:querySnippetId",
-        title: "Query Snippets",
-        key: "query_snippets",
-        isNewOrEditPage: true,
-      },
-    ],
-    {
-      reloadOnSearch: false,
-      template: '<page-query-snippets-list on-error="handleError"></page-query-snippets-list>',
-      controller($scope, $exceptionHandler) {
-        "ngInject";
-
-        $scope.handleError = $exceptionHandler;
-      },
-    }
-  );
-}
-
-init.init = true;
+routes.register(
+  "QuerySnippets.List",
+  routeWithUserSession({
+    path: "/query_snippets",
+    title: "Query Snippets",
+    render: pageProps => <QuerySnippetsListPage {...pageProps} currentPage="query_snippets" />,
+  })
+);
+routes.register(
+  "QuerySnippets.NewOrEdit",
+  routeWithUserSession({
+    path: "/query_snippets/:querySnippetId",
+    title: "Query Snippets",
+    render: pageProps => <QuerySnippetsListPage {...pageProps} currentPage="query_snippets" isNewOrEditPage />,
+  })
+);

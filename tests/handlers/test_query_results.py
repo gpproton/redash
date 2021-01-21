@@ -1,3 +1,4 @@
+from redash.query_runner import BaseSQLQueryRunner, BaseQueryRunner
 from tests import BaseTestCase
 
 from redash.models import db
@@ -27,6 +28,19 @@ class TestQueryResultsCacheHeaders(BaseTestCase):
 
         rv = self.make_request("get", "/api/queries/{}/results.json".format(query.id))
         self.assertEqual(404, rv.status_code)
+
+
+class TestQueryResultsContentDispositionHeaders(BaseTestCase):
+    def test_supports_unicode(self):
+        query_result = self.factory.create_query_result()
+        query = self.factory.create_query(name="עברית", latest_query_data=query_result)
+
+        rv = self.make_request("get", "/api/queries/{}/results.json".format(query.id))
+        # This is what gunicorn will do with it
+        try:
+            rv.headers['Content-Disposition'].encode('ascii')
+        except Exception as e:
+            self.fail(repr(e))
 
 
 class TestQueryResultListAPI(BaseTestCase):
@@ -62,6 +76,47 @@ class TestQueryResultListAPI(BaseTestCase):
         self.assertEqual(rv.status_code, 200)
         self.assertNotIn("query_result", rv.json)
         self.assertIn("job", rv.json)
+
+    def test_add_limit_change_query_sql(self):
+        ds = self.factory.create_data_source(
+            group=self.factory.org.default_group, type="pg"
+        )
+        query = self.factory.create_query(query_text="SELECT 2", data_source=ds)
+        query_result = self.factory.create_query_result(data_source=ds, query_hash=query.query_hash)
+
+        rv = self.make_request(
+            "post",
+            "/api/query_results",
+            data={
+                "data_source_id": ds.id,
+                "query": query.query_text,
+                "apply_auto_limit": True
+            },
+        )
+
+        self.assertEqual(rv.status_code, 200)
+        self.assertNotIn("query_result", rv.json)
+        self.assertIn("job", rv.json)
+
+    def test_add_limit_no_change_for_nonsql(self):
+        ds = self.factory.create_data_source(
+            group=self.factory.org.default_group, type="prometheus"
+        )
+        query = self.factory.create_query(query_text="SELECT 5", data_source=ds)
+        query_result = self.factory.create_query_result(data_source=ds, query_hash=query.query_hash)
+
+        rv = self.make_request(
+            "post",
+            "/api/query_results",
+            data={
+                "data_source_id": ds.id,
+                "query": query.query_text,
+                "apply_auto_limit": True
+            },
+        )
+
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(query_result.id, rv.json["query_result"]["id"])
 
     def test_execute_query_without_access(self):
         group = self.factory.create_group()
@@ -432,3 +487,23 @@ class TestQueryResultExcelResponse(BaseTestCase):
             is_json=False,
         )
         self.assertEqual(rv.status_code, 200)
+
+
+class TestJobResource(BaseTestCase):
+    def test_cancels_queued_queries(self):
+        QUEUED = 1
+        FAILED = 4
+
+        query = self.factory.create_query()
+        job_id = self.make_request(
+            "post", f"/api/queries/{query.id}/results", data={"parameters": {}},
+        ).json["job"]["id"]
+
+        status = self.make_request("get", f"/api/jobs/{job_id}").json["job"]["status"]
+        self.assertEqual(status, QUEUED)
+
+        self.make_request("delete", f"/api/jobs/{job_id}")
+
+        job = self.make_request("get", f"/api/jobs/{job_id}").json["job"]
+        self.assertEqual(job["status"], FAILED)
+        self.assertTrue("cancelled" in job["error"])

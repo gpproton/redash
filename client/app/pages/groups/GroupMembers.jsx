@@ -1,11 +1,12 @@
 import { includes, map } from "lodash";
 import React from "react";
-import { react2angular } from "react2angular";
 import Button from "antd/lib/button";
 
-import { Paginator } from "@/components/Paginator";
+import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
+import navigateTo from "@/components/ApplicationArea/navigateTo";
+import Paginator from "@/components/Paginator";
 
-import { wrap as liveItemsList, ControllerType } from "@/components/items-list/ItemsList";
+import { wrap as itemsList, ControllerType } from "@/components/items-list/ItemsList";
 import { ResourceItemsSource } from "@/components/items-list/classes/ItemsSource";
 import { StateStorage } from "@/components/items-list/classes/StateStorage";
 
@@ -22,10 +23,9 @@ import wrapSettingsTab from "@/components/SettingsWrapper";
 
 import notification from "@/services/notification";
 import { currentUser } from "@/services/auth";
-import { Group } from "@/services/group";
-import { User } from "@/services/user";
-import navigateTo from "@/services/navigateTo";
-import { routesToAngularRoutes } from "@/lib/utils";
+import Group from "@/services/group";
+import User from "@/services/user";
+import routes from "@/services/routes";
 
 class GroupMembers extends React.Component {
   static propTypes = {
@@ -81,7 +81,7 @@ class GroupMembers extends React.Component {
 
   componentDidMount() {
     Group.get({ id: this.groupId })
-      .$promise.then(group => {
+      .then(group => {
         this.group = group;
         this.forceUpdate();
       })
@@ -92,7 +92,7 @@ class GroupMembers extends React.Component {
 
   removeGroupMember = (event, user) =>
     Group.removeMember({ id: this.groupId, userId: user.id })
-      .$promise.then(() => {
+      .then(() => {
         this.props.controller.updatePagination({ page: 1 });
         this.props.controller.update();
       })
@@ -106,7 +106,7 @@ class GroupMembers extends React.Component {
       dialogTitle: "Add Members",
       inputPlaceholder: "Search users...",
       selectedItemsTitle: "New Members",
-      searchItems: searchTerm => User.query({ q: searchTerm }).$promise.then(({ results }) => results),
+      searchItems: searchTerm => User.query({ q: searchTerm }).then(({ results }) => results),
       renderItem: (item, { isSelected }) => {
         const alreadyInGroup = includes(alreadyAddedUsers, item.id);
         return {
@@ -126,12 +126,9 @@ class GroupMembers extends React.Component {
           </UserPreviewCard>
         ),
       }),
-      save: items => {
-        const promises = map(items, u => Group.addMember({ id: this.groupId }, { user_id: u.id }).$promise);
-        return Promise.all(promises);
-      },
-    }).result.finally(() => {
-      this.props.controller.update();
+    }).onClose(items => {
+      const promises = map(items, u => Group.addMember({ id: this.groupId }, { user_id: u.id }));
+      return Promise.all(promises).then(() => this.props.controller.update());
     });
   };
 
@@ -148,7 +145,7 @@ class GroupMembers extends React.Component {
               items={this.sidebarMenu}
               canAddMembers={currentUser.isAdmin}
               onAddMembersClick={this.addMembers}
-              onGroupDeleted={() => navigateTo("/groups", true)}
+              onGroupDeleted={() => navigateTo("groups")}
             />
           </Layout.Sidebar>
           <Layout.Content>
@@ -176,8 +173,10 @@ class GroupMembers extends React.Component {
                   toggleSorting={controller.toggleSorting}
                 />
                 <Paginator
+                  showPageSizeSelect
                   totalCount={controller.totalItemsCount}
-                  itemsPerPage={controller.itemsPerPage}
+                  pageSize={controller.itemsPerPage}
+                  onPageSizeChange={itemsPerPage => controller.updatePagination({ itemsPerPage })}
                   page={controller.page}
                   onChange={page => controller.updatePagination({ page })}
                 />
@@ -190,50 +189,30 @@ class GroupMembers extends React.Component {
   }
 }
 
-export default function init(ngModule) {
-  ngModule.component(
-    "pageGroupMembers",
-    react2angular(
-      wrapSettingsTab(
-        null,
-        liveItemsList(
-          GroupMembers,
-          new ResourceItemsSource({
-            isPlainList: true,
-            getRequest(unused, { params: { groupId } }) {
-              return { id: groupId };
-            },
-            getResource() {
-              return Group.members.bind(Group);
-            },
-            getItemProcessor() {
-              return item => new User(item);
-            },
-          }),
-          new StateStorage({ orderByField: "name" })
-        )
-      )
-    )
-  );
+const GroupMembersPage = wrapSettingsTab(
+  "Groups.Members",
+  null,
+  itemsList(
+    GroupMembers,
+    () =>
+      new ResourceItemsSource({
+        isPlainList: true,
+        getRequest(unused, { params: { groupId } }) {
+          return { id: groupId };
+        },
+        getResource() {
+          return Group.members.bind(Group);
+        },
+      }),
+    () => new StateStorage({ orderByField: "name" })
+  )
+);
 
-  return routesToAngularRoutes(
-    [
-      {
-        path: "/groups/:groupId",
-        title: "Group Members",
-        key: "users",
-      },
-    ],
-    {
-      reloadOnSearch: false,
-      template: '<page-group-members on-error="handleError"></page-group-members>',
-      controller($scope, $exceptionHandler) {
-        "ngInject";
-
-        $scope.handleError = $exceptionHandler;
-      },
-    }
-  );
-}
-
-init.init = true;
+routes.register(
+  "Groups.Members",
+  routeWithUserSession({
+    path: "/groups/:groupId",
+    title: "Group Members",
+    render: pageProps => <GroupMembersPage {...pageProps} currentPage="users" />,
+  })
+);

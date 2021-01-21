@@ -1,22 +1,22 @@
-import { flatMap, values } from "lodash";
+import { partition, flatMap, values } from "lodash";
 import React from "react";
-import { react2angular } from "react2angular";
+import moment from "moment";
 
 import Alert from "antd/lib/alert";
 import Tabs from "antd/lib/tabs";
 import * as Grid from "antd/lib/grid";
+import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import Layout from "@/components/admin/Layout";
-import { CounterCard } from "@/components/admin/CeleryStatus";
-import { WorkersTable, QueuesTable, OtherJobsTable } from "@/components/admin/RQStatus";
+import { CounterCard, WorkersTable, QueuesTable, QueryJobsTable, OtherJobsTable } from "@/components/admin/RQStatus";
 
-import { $http, $location, $rootScope } from "@/services/ng";
+import { axios } from "@/services/axios";
+import location from "@/services/location";
 import recordEvent from "@/services/recordEvent";
-import { routesToAngularRoutes } from "@/lib/utils";
-import moment from "moment";
+import routes from "@/services/routes";
 
 class Jobs extends React.Component {
   state = {
-    activeTab: $location.hash(),
+    activeTab: location.hash,
     isLoading: true,
     error: null,
 
@@ -41,9 +41,9 @@ class Jobs extends React.Component {
   }
 
   refresh = () => {
-    $http
+    axios
       .get("/api/admin/queries/rq_status")
-      .then(({ data }) => this.processQueues(data))
+      .then(data => this.processQueues(data))
       .catch(error => this.handleError(error));
 
     this._refreshTimer = setTimeout(this.refresh, 60 * 1000);
@@ -80,10 +80,13 @@ class Jobs extends React.Component {
 
   render() {
     const { isLoading, error, queueCounters, startedJobs, overallCounters, workers, activeTab } = this.state;
+    const [startedQueryJobs, otherStartedJobs] = partition(startedJobs, [
+      "name",
+      "redash.tasks.queries.execution.execute_query",
+    ]);
 
     const changeTab = newTab => {
-      $location.hash(newTab);
-      $rootScope.$applyAsync();
+      location.setHash(newTab);
       this.setState({ activeTab: newTab });
     };
 
@@ -110,8 +113,11 @@ class Jobs extends React.Component {
                 <Tabs.TabPane key="workers" tab="Workers">
                   <WorkersTable loading={isLoading} items={workers} />
                 </Tabs.TabPane>
+                <Tabs.TabPane key="queries" tab="Queries">
+                  <QueryJobsTable loading={isLoading} items={startedQueryJobs} />
+                </Tabs.TabPane>
                 <Tabs.TabPane key="other" tab="Other Jobs">
-                  <OtherJobsTable loading={isLoading} items={startedJobs} />
+                  <OtherJobsTable loading={isLoading} items={otherStartedJobs} />
                 </Tabs.TabPane>
               </Tabs>
             </React.Fragment>
@@ -122,21 +128,11 @@ class Jobs extends React.Component {
   }
 }
 
-export default function init(ngModule) {
-  ngModule.component("pageJobs", react2angular(Jobs));
-
-  return routesToAngularRoutes(
-    [
-      {
-        path: "/admin/queries/jobs",
-        title: "RQ Status",
-        key: "jobs",
-      },
-    ],
-    {
-      template: "<page-jobs></page-jobs>",
-    }
-  );
-}
-
-init.init = true;
+routes.register(
+  "Admin.Jobs",
+  routeWithUserSession({
+    path: "/admin/queries/jobs",
+    title: "RQ Status",
+    render: pageProps => <Jobs {...pageProps} />,
+  })
+);

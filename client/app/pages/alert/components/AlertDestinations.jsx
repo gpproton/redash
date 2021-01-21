@@ -1,19 +1,19 @@
+import { without, find, includes, map, toLower } from "lodash";
 import React from "react";
 import PropTypes from "prop-types";
-import { without, find, isEmpty, includes, map } from "lodash";
 
+import Link from "@/components/Link";
 import SelectItemsDialog from "@/components/SelectItemsDialog";
 import { Destination as DestinationType, UserProfile as UserType } from "@/components/proptypes";
 
-import { Destination as DestinationService, IMG_ROOT } from "@/services/destination";
-import { AlertSubscription } from "@/services/alert-subscription";
-import { $q } from "@/services/ng";
+import DestinationService, { IMG_ROOT } from "@/services/destination";
+import AlertSubscription from "@/services/alert-subscription";
 import { clientConfig, currentUser } from "@/services/auth";
 import notification from "@/services/notification";
 import ListItemAddon from "@/components/groups/ListItemAddon";
 import EmailSettingsWarning from "@/components/EmailSettingsWarning";
 
-import Icon from "antd/lib/icon";
+import CloseOutlinedIcon from "@ant-design/icons/CloseOutlined";
 import Tooltip from "antd/lib/tooltip";
 import Switch from "antd/lib/switch";
 import Button from "antd/lib/button";
@@ -46,7 +46,7 @@ function ListItem({ destination: { name, type }, user, unsubscribe }) {
       )}
       {canUnsubscribe && (
         <Tooltip title="Remove" mouseEnterDelay={0.5}>
-          <Icon type="close" className="remove-button" onClick={unsubscribe} />
+          <CloseOutlinedIcon className="remove-button" onClick={unsubscribe} />
         </Tooltip>
       )}
     </li>
@@ -61,7 +61,7 @@ ListItem.propTypes = {
 
 export default class AlertDestinations extends React.Component {
   static propTypes = {
-    alertId: PropTypes.number.isRequired,
+    alertId: PropTypes.any.isRequired,
   };
 
   state = {
@@ -71,9 +71,9 @@ export default class AlertDestinations extends React.Component {
 
   componentDidMount() {
     const { alertId } = this.props;
-    $q.all([
-      DestinationService.query().$promise, // get all destinations
-      AlertSubscription.query({ alertId }).$promise, // get subcriptions per alert
+    Promise.all([
+      DestinationService.query(), // get all destinations
+      AlertSubscription.query({ alertId }), // get subcriptions per alert
     ]).then(([dests, subs]) => {
       subs = subs.map(normalizeSub);
       this.setState({ dests, subs });
@@ -90,18 +90,17 @@ export default class AlertDestinations extends React.Component {
         <>
           <i className="fa fa-info-circle" /> Create new destinations in{" "}
           <Tooltip title="Opens page in a new tab.">
-            <a href="destinations/new" target="_blank">
+            <Link href="destinations/new" target="_blank">
               Alert Destinations
-            </a>
+            </Link>
           </Tooltip>
         </>
       ),
       dialogTitle: "Add Existing Alert Destinations",
       inputPlaceholder: "Search destinations...",
       searchItems: searchTerm => {
-        searchTerm = searchTerm.toLowerCase();
-        const filtered = dests.filter(d => isEmpty(searchTerm) || includes(d.name.toLowerCase(), searchTerm));
-        return Promise.resolve(filtered);
+        searchTerm = toLower(searchTerm);
+        return Promise.resolve(dests.filter(d => includes(toLower(d.name), searchTerm)));
       },
       renderItem: (item, { isSelected }) => {
         const alreadyInGroup = !!find(subs, s => s.destination.id === item.id);
@@ -118,16 +117,16 @@ export default class AlertDestinations extends React.Component {
           className: isSelected || alreadyInGroup ? "selected" : "",
         };
       },
-      save: items => {
-        const promises = map(items, item => this.subscribe(item));
-        return Promise.all(promises)
-          .then(() => {
-            notification.success("Subscribed.");
-          })
-          .catch(() => {
-            notification.error("Failed saving subscription.");
-          });
-      },
+    }).onClose(items => {
+      const promises = map(items, item => this.subscribe(item));
+      return Promise.all(promises)
+        .then(() => {
+          notification.success("Subscribed.");
+        })
+        .catch(() => {
+          notification.error("Failed saving subscription.");
+          return Promise.reject(null); // keep dialog visible but suppress its default error message
+        });
     });
   };
 
@@ -142,12 +141,12 @@ export default class AlertDestinations extends React.Component {
   subscribe = dest => {
     const { alertId } = this.props;
 
-    const sub = new AlertSubscription({ alert_id: alertId });
+    const sub = { alert_id: alertId };
     if (dest) {
       sub.destination_id = dest.id;
     }
 
-    return sub.$save(() => {
+    return AlertSubscription.create(sub).then(sub => {
       const { subs } = this.state;
       this.setState({
         subs: [...subs, normalizeSub(sub)],
@@ -156,18 +155,17 @@ export default class AlertDestinations extends React.Component {
   };
 
   unsubscribe = sub => {
-    sub.$delete(
-      () => {
+    AlertSubscription.delete(sub)
+      .then(() => {
         // not showing subscribe notification cause it's redundant here
         const { subs } = this.state;
         this.setState({
           subs: without(subs, sub),
         });
-      },
-      () => {
+      })
+      .catch(() => {
         notification.error("Failed unsubscribing.");
-      }
-    );
+      });
   };
 
   render() {

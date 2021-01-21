@@ -1,21 +1,23 @@
+import { get, find, toUpper } from "lodash";
 import React from "react";
 import PropTypes from "prop-types";
-import { get, find, toUpper } from "lodash";
-import { react2angular } from "react2angular";
+
 import Modal from "antd/lib/modal";
-import { DataSource, IMG_ROOT } from "@/services/data-source";
-import navigateTo from "@/services/navigateTo";
-import { $route } from "@/services/ng";
-import notification from "@/services/notification";
-import PromiseRejectionError from "@/lib/promise-rejection-error";
+import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
+import navigateTo from "@/components/ApplicationArea/navigateTo";
 import LoadingState from "@/components/items-list/components/LoadingState";
 import DynamicForm from "@/components/dynamic-form/DynamicForm";
 import helper from "@/components/dynamic-form/dynamicFormHelper";
 import HelpTrigger, { TYPES as HELP_TRIGGER_TYPES } from "@/components/HelpTrigger";
 import wrapSettingsTab from "@/components/SettingsWrapper";
 
+import DataSource, { IMG_ROOT } from "@/services/data-source";
+import notification from "@/services/notification";
+import routes from "@/services/routes";
+
 class EditDataSource extends React.Component {
   static propTypes = {
+    dataSourceId: PropTypes.string.isRequired,
     onError: PropTypes.func,
   };
 
@@ -30,46 +32,38 @@ class EditDataSource extends React.Component {
   };
 
   componentDidMount() {
-    DataSource.get({ id: $route.current.params.dataSourceId })
-      .$promise.then(dataSource => {
+    DataSource.get({ id: this.props.dataSourceId })
+      .then(dataSource => {
         const { type } = dataSource;
         this.setState({ dataSource });
-        DataSource.types(types => this.setState({ type: find(types, { type }), loading: false }));
+        DataSource.types().then(types => this.setState({ type: find(types, { type }), loading: false }));
       })
-      .catch(error => {
-        // ANGULAR_REMOVE_ME This code is related to Angular's HTTP services
-        if (error.status && error.data) {
-          error = new PromiseRejectionError(error);
-        }
-        this.props.onError(error);
-      });
+      .catch(error => this.props.onError(error));
   }
 
   saveDataSource = (values, successCallback, errorCallback) => {
     const { dataSource } = this.state;
     helper.updateTargetWithValues(dataSource, values);
-    dataSource.$save(
-      () => successCallback("Saved."),
-      error => {
-        const message = get(error, "data.message", "Failed saving.");
+    DataSource.save(dataSource)
+      .then(() => successCallback("Saved."))
+      .catch(error => {
+        const message = get(error, "response.data.message", "Failed saving.");
         errorCallback(message);
-      }
-    );
+      });
   };
 
   deleteDataSource = callback => {
     const { dataSource } = this.state;
 
     const doDelete = () => {
-      dataSource.$delete(
-        () => {
+      DataSource.delete(dataSource)
+        .then(() => {
           notification.success("Data source deleted successfully.");
-          navigateTo("/data_sources", true);
-        },
-        () => {
+          navigateTo("data_sources");
+        })
+        .catch(() => {
           callback();
-        }
-      );
+        });
     };
 
     Modal.confirm({
@@ -86,25 +80,23 @@ class EditDataSource extends React.Component {
 
   testConnection = callback => {
     const { dataSource } = this.state;
-    DataSource.test(
-      { id: dataSource.id },
-      httpResponse => {
+    DataSource.test({ id: dataSource.id })
+      .then(httpResponse => {
         if (httpResponse.ok) {
           notification.success("Success");
         } else {
           notification.error("Connection Test Failed:", httpResponse.message, { duration: 10 });
         }
         callback();
-      },
-      () => {
+      })
+      .catch(() => {
         notification.error(
           "Connection Test Failed:",
           "Unknown error occurred while performing connection test. Please try again later.",
           { duration: 10 }
         );
         callback();
-      }
-    );
+      });
   };
 
   renderForm() {
@@ -120,6 +112,7 @@ class EditDataSource extends React.Component {
       ],
       onSubmit: this.saveDataSource,
       feedbackIcons: true,
+      defaultShowExtraFields: helper.hasFilledExtraField(type, dataSource),
     };
 
     return (
@@ -147,20 +140,13 @@ class EditDataSource extends React.Component {
   }
 }
 
-export default function init(ngModule) {
-  ngModule.component("pageEditDataSource", react2angular(wrapSettingsTab(null, EditDataSource)));
+const EditDataSourcePage = wrapSettingsTab("DataSources.Edit", null, EditDataSource);
 
-  return {
-    "/data_sources/:dataSourceId": {
-      template: '<page-edit-data-source on-error="handleError"></page-edit-data-source>',
-      title: "Data Sources",
-      controller($scope, $exceptionHandler) {
-        "ngInject";
-
-        $scope.handleError = $exceptionHandler;
-      },
-    },
-  };
-}
-
-init.init = true;
+routes.register(
+  "DataSources.Edit",
+  routeWithUserSession({
+    path: "/data_sources/:dataSourceId",
+    title: "Data Sources",
+    render: pageProps => <EditDataSourcePage {...pageProps} />,
+  })
+);

@@ -1,13 +1,13 @@
 import { map } from "lodash";
 import React from "react";
-import { react2angular } from "react2angular";
 
 import Switch from "antd/lib/switch";
-import * as Grid from "antd/lib/grid";
-import { Paginator } from "@/components/Paginator";
+import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
+import Link from "@/components/Link";
+import Paginator from "@/components/Paginator";
 import { QueryTagsControl } from "@/components/tags-control/TagsControl";
-import { SchedulePhrase } from "@/components/queries/SchedulePhrase";
-import { TimeAgo } from "@/components/TimeAgo";
+import SchedulePhrase from "@/components/queries/SchedulePhrase";
+import TimeAgo from "@/components/TimeAgo";
 import Layout from "@/components/admin/Layout";
 
 import { wrap as itemsList, ControllerType } from "@/components/items-list/ItemsList";
@@ -15,13 +15,12 @@ import { ItemsSource } from "@/components/items-list/classes/ItemsSource";
 import { StateStorage } from "@/components/items-list/classes/StateStorage";
 
 import LoadingState from "@/components/items-list/components/LoadingState";
-import { PageSizeSelect } from "@/components/items-list/components/Sidebar";
 import ItemsTable, { Columns } from "@/components/items-list/components/ItemsTable";
 
-import { $http } from "@/services/ng";
+import { axios } from "@/services/axios";
 import { Query } from "@/services/query";
 import recordEvent from "@/services/recordEvent";
-import { routesToAngularRoutes } from "@/lib/utils";
+import routes from "@/services/routes";
 
 class OutdatedQueries extends React.Component {
   static propTypes = {
@@ -39,9 +38,9 @@ class OutdatedQueries extends React.Component {
     Columns.custom.sortable(
       (text, item) => (
         <React.Fragment>
-          <a className="table-main-title" href={"queries/" + item.id}>
+          <Link className="table-main-title" href={"queries/" + item.id}>
             {item.name}
-          </a>
+          </Link>
           <QueryTagsControl
             className="d-block"
             tags={item.tags}
@@ -92,35 +91,24 @@ class OutdatedQueries extends React.Component {
     const { controller } = this.props;
     return (
       <Layout activeTab={controller.params.currentPage}>
-        <Grid.Row className="m-15">
-          <Grid.Col span={16}>
-            <div>
-              <label htmlFor="auto-update-switch" className="m-0">
-                Auto update
-              </label>
-              <Switch
-                id="auto-update-switch"
-                className="m-l-10"
-                checked={this.state.autoUpdate}
-                onChange={autoUpdate => this.setState({ autoUpdate })}
-              />
+        <div className="m-15">
+          <div>
+            <label htmlFor="auto-update-switch" className="m-0">
+              Auto update
+            </label>
+            <Switch
+              id="auto-update-switch"
+              className="m-l-10"
+              checked={this.state.autoUpdate}
+              onChange={autoUpdate => this.setState({ autoUpdate })}
+            />
+          </div>
+          {controller.params.lastUpdatedAt && (
+            <div className="m-t-5">
+              Last updated: <TimeAgo date={controller.params.lastUpdatedAt * 1000} />
             </div>
-            {controller.params.lastUpdatedAt && (
-              <div className="m-t-5">
-                Last updated: <TimeAgo date={controller.params.lastUpdatedAt * 1000} />
-              </div>
-            )}
-          </Grid.Col>
-          <Grid.Col span={8}>
-            {controller.isLoaded && !controller.isEmpty && (
-              <PageSizeSelect
-                options={controller.pageSizeOptions}
-                value={controller.itemsPerPage}
-                onChange={itemsPerPage => controller.updatePagination({ itemsPerPage })}
-              />
-            )}
-          </Grid.Col>
-        </Grid.Row>
+          )}
+        </div>
         {!controller.isLoaded && <LoadingState />}
         {controller.isLoaded && controller.isEmpty && (
           <div className="text-center p-15">There are no outdated queries.</div>
@@ -135,8 +123,10 @@ class OutdatedQueries extends React.Component {
               toggleSorting={controller.toggleSorting}
             />
             <Paginator
+              showPageSizeSelect
               totalCount={controller.totalItemsCount}
-              itemsPerPage={controller.itemsPerPage}
+              pageSize={controller.itemsPerPage}
+              onPageSizeChange={itemsPerPage => controller.updatePagination({ itemsPerPage })}
               page={controller.page}
               onChange={page => controller.updatePagination({ page })}
             />
@@ -147,51 +137,34 @@ class OutdatedQueries extends React.Component {
   }
 }
 
-export default function init(ngModule) {
-  ngModule.component(
-    "pageOutdatedQueries",
-    react2angular(
-      itemsList(
-        OutdatedQueries,
-        new ItemsSource({
-          doRequest(request, context) {
-            return (
-              $http
-                .get("/api/admin/queries/outdated")
-                // eslint-disable-next-line camelcase
-                .then(({ data: { queries, updated_at } }) => {
-                  context.setCustomParams({ lastUpdatedAt: parseFloat(updated_at) });
-                  return queries;
-                })
-            );
-          },
-          processResults(items) {
-            return map(items, item => new Query(item));
-          },
-          isPlainList: true,
-        }),
-        new StateStorage({ orderByField: "created_at", orderByReverse: true })
-      )
-    )
-  );
-
-  return routesToAngularRoutes(
-    [
-      {
-        path: "/admin/queries/outdated",
-        title: "Outdated Queries",
-        key: "outdated_queries",
+const OutdatedQueriesPage = itemsList(
+  OutdatedQueries,
+  () =>
+    new ItemsSource({
+      doRequest(request, context) {
+        return (
+          axios
+            .get("/api/admin/queries/outdated")
+            // eslint-disable-next-line camelcase
+            .then(({ queries, updated_at }) => {
+              context.setCustomParams({ lastUpdatedAt: parseFloat(updated_at) });
+              return queries;
+            })
+        );
       },
-    ],
-    {
-      template: '<page-outdated-queries on-error="handleError"></page-outdated-queries>',
-      controller($scope, $exceptionHandler) {
-        "ngInject";
-
-        $scope.handleError = $exceptionHandler;
+      processResults(items) {
+        return map(items, item => new Query(item));
       },
-    }
-  );
-}
+      isPlainList: true,
+    }),
+  () => new StateStorage({ orderByField: "created_at", orderByReverse: true })
+);
 
-init.init = true;
+routes.register(
+  "Admin.OutdatedQueries",
+  routeWithUserSession({
+    path: "/admin/queries/outdated",
+    title: "Outdated Queries",
+    render: pageProps => <OutdatedQueriesPage {...pageProps} currentPage="outdated_queries" />,
+  })
+);

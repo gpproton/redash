@@ -8,7 +8,6 @@ import Select from "antd/lib/select";
 import Table from "antd/lib/table";
 import Popover from "antd/lib/popover";
 import Button from "antd/lib/button";
-import Icon from "antd/lib/icon";
 import Tag from "antd/lib/tag";
 import Input from "antd/lib/input";
 import Radio from "antd/lib/radio";
@@ -16,12 +15,15 @@ import Form from "antd/lib/form";
 import Tooltip from "antd/lib/tooltip";
 import ParameterValueInput from "@/components/ParameterValueInput";
 import { ParameterMappingType } from "@/services/widget";
-import { Parameter } from "@/services/parameters";
+import { Parameter, cloneParameter } from "@/services/parameters";
 import HelpTrigger from "@/components/HelpTrigger";
 
-import "./ParameterMappingInput.less";
+import QuestionCircleFilledIcon from "@ant-design/icons/QuestionCircleFilled";
+import EditOutlinedIcon from "@ant-design/icons/EditOutlined";
+import CloseOutlinedIcon from "@ant-design/icons/CloseOutlined";
+import CheckOutlinedIcon from "@ant-design/icons/CheckOutlined";
 
-const { Option } = Select;
+import "./ParameterMappingInput.less";
 
 export const MappingType = {
   DashboardAddNew: "dashboard-add-new",
@@ -42,7 +44,7 @@ export function parameterMappingsToEditableMappings(mappings, parameters, existi
         break;
       case ParameterMappingType.StaticValue:
         result.type = MappingType.StaticValue;
-        result.param = result.param.clone();
+        result.param = cloneParameter(result.param);
         result.param.setValue(result.value);
         break;
       case ParameterMappingType.WidgetLevel:
@@ -73,7 +75,7 @@ export function editableMappingsToParameterMappings(mappings) {
             break;
           case MappingType.StaticValue:
             result.type = ParameterMappingType.StaticValue;
-            result.param = mapping.param.clone();
+            result.param = cloneParameter(mapping.param);
             result.param.setValue(result.value);
             result.value = result.param.value;
             break;
@@ -157,7 +159,7 @@ export class ParameterMappingInput extends React.Component {
     const { onChange, mapping } = this.props;
     const newMapping = extend({}, mapping, update);
     if (newMapping.value !== mapping.value) {
-      newMapping.param = newMapping.param.clone();
+      newMapping.param = cloneParameter(newMapping.param);
       newMapping.param.setValue(newMapping.value);
     }
     if (has(update, "type")) {
@@ -181,7 +183,7 @@ export class ParameterMappingInput extends React.Component {
           Existing dashboard parameter{" "}
           {noExisting ? (
             <Tooltip title="There are no dashboard parameters corresponding to this data type">
-              <Icon type="question-circle" theme="filled" />
+              <QuestionCircleFilledIcon />
             </Tooltip>
           ) : null}
         </Radio>
@@ -204,19 +206,9 @@ export class ParameterMappingInput extends React.Component {
 
   renderDashboardMapToExisting() {
     const { mapping, existingParamNames } = this.props;
+    const options = map(existingParamNames, paramName => ({ label: paramName, value: paramName }));
 
-    return (
-      <Select
-        value={mapping.mapTo}
-        onChange={mapTo => this.updateParamMapping({ mapTo })}
-        dropdownMatchSelectWidth={false}>
-        {map(existingParamNames, name => (
-          <Option value={name} key={name}>
-            {name}
-          </Option>
-        ))}
-      </Select>
-    );
+    return <Select value={mapping.mapTo} onChange={mapTo => this.updateParamMapping({ mapTo })} options={options} />;
   }
 
   renderStaticValue() {
@@ -354,8 +346,8 @@ class MappingEditor extends React.Component {
         content={this.renderContent()}
         visible={visible}
         onVisibleChange={this.onVisibleChange}>
-        <Button size="small" type="dashed" data-test={`EditParamMappingButon-${mapping.param.name}`}>
-          <Icon type="edit" />
+        <Button size="small" type="dashed" data-test={`EditParamMappingButton-${mapping.param.name}`}>
+          <EditOutlinedIcon />
         </Button>
       </Popover>
     );
@@ -434,10 +426,10 @@ class TitleEditor extends React.Component {
           autoFocus
         />
         <Button size="small" type="dashed" onClick={this.hide}>
-          <Icon type="close" />
+          <CloseOutlinedIcon />
         </Button>
         <Button size="small" type="dashed" onClick={this.save}>
-          <Icon type="check" />
+          <CheckOutlinedIcon />
         </Button>
       </div>
     );
@@ -460,7 +452,7 @@ class TitleEditor extends React.Component {
         visible={this.state.showPopup}
         onVisibleChange={this.onPopupVisibleChange}>
         <Button size="small" type="dashed">
-          <Icon type="edit" />
+          <EditOutlinedIcon />
         </Button>
       </Popover>
     );
@@ -527,7 +519,7 @@ export class ParameterMappingListInput extends React.Component {
 
       // static type is different since it's fed param.normalizedValue
     } else if (type === MappingType.StaticValue) {
-      param = param.clone().setValue(mapping.value);
+      param = cloneParameter(param).setValue(mapping.value);
     }
 
     let value = Parameter.getExecutionValue(param);

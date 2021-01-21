@@ -1,12 +1,9 @@
-import { find, isArray, map, intersection, isEqual } from "lodash";
+import { find, isArray, get, first, map, intersection, isEqual, isEmpty } from "lodash";
 import React from "react";
 import PropTypes from "prop-types";
-import { react2angular } from "react2angular";
-import Select from "antd/lib/select";
+import SelectWithVirtualScroll from "@/components/SelectWithVirtualScroll";
 
-const { Option } = Select;
-
-export class QueryBasedParameterInput extends React.Component {
+export default class QueryBasedParameterInput extends React.Component {
   static propTypes = {
     parameter: PropTypes.any, // eslint-disable-line react/forbid-prop-types
     value: PropTypes.any, // eslint-disable-line react/forbid-prop-types
@@ -57,7 +54,7 @@ export class QueryBasedParameterInput extends React.Component {
       return validValues;
     }
     const found = find(options, option => option.value === this.props.value) !== undefined;
-    value = found ? value : options[0].value;
+    value = found ? value : get(first(options), "value");
     this.setState({ value });
     return value;
   }
@@ -80,36 +77,24 @@ export class QueryBasedParameterInput extends React.Component {
   }
 
   render() {
-    const { className, value, mode, onSelect, ...otherProps } = this.props;
+    const { className, mode, onSelect, queryId, value, ...otherProps } = this.props;
     const { loading, options } = this.state;
     return (
       <span>
-        <Select
+        <SelectWithVirtualScroll
           className={className}
-          disabled={loading || options.length === 0}
+          disabled={loading}
           loading={loading}
           mode={mode}
           value={this.state.value}
           onChange={onSelect}
-          dropdownMatchSelectWidth={false}
-          optionFilterProp="children"
+          options={map(options, ({ value, name }) => ({ label: String(name), value }))}
           showSearch
           showArrow
-          notFoundContent={null}
-          {...otherProps}>
-          {options.map(option => (
-            <Option value={option.value} key={option.value}>
-              {option.name}
-            </Option>
-          ))}
-        </Select>
+          notFoundContent={isEmpty(options) ? "No options available" : null}
+          {...otherProps}
+        />
       </span>
     );
   }
 }
-
-export default function init(ngModule) {
-  ngModule.component("queryBasedParameterInput", react2angular(QueryBasedParameterInput));
-}
-
-init.init = true;

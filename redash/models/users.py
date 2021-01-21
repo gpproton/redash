@@ -8,7 +8,6 @@ from operator import or_
 from flask import current_app as app, url_for, request_started
 from flask_login import current_user, AnonymousUserMixin, UserMixin
 from passlib.apps import custom_app_context as pwd_context
-from six import string_types, text_type
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.dialects import postgresql
 
@@ -18,7 +17,7 @@ from sqlalchemy_utils.models import generic_repr
 from redash import redis_connection
 from redash.utils import generate_token, utcnow, dt_from_timestamp
 
-from .base import db, Column, GFKBase
+from .base import db, Column, GFKBase, key_type, primary_key
 from .mixins import TimestampMixin, BelongsToOrgMixin
 from .types import json_cast_property, MutableDict, MutableList
 
@@ -81,15 +80,15 @@ class PermissionsCheckMixin(object):
 class User(
     TimestampMixin, db.Model, BelongsToOrgMixin, UserMixin, PermissionsCheckMixin
 ):
-    id = Column(db.Integer, primary_key=True)
-    org_id = Column(db.Integer, db.ForeignKey("organizations.id"))
+    id = primary_key("User")
+    org_id = Column(key_type("Organization"), db.ForeignKey("organizations.id"))
     org = db.relationship("Organization", backref=db.backref("users", lazy="dynamic"))
     name = Column(db.String(320))
     email = Column(EmailType)
     _profile_image_url = Column("profile_image_url", db.String(320), nullable=True)
     password_hash = Column(db.String(128), nullable=True)
     group_ids = Column(
-        "groups", MutableList.as_mutable(postgresql.ARRAY(db.Integer)), nullable=True
+        "groups", MutableList.as_mutable(postgresql.ARRAY(key_type("Group"))), nullable=True
     )
     api_key = Column(db.String(40), default=lambda: generate_token(40), unique=True)
 
@@ -276,11 +275,11 @@ class Group(db.Model, BelongsToOrgMixin):
     BUILTIN_GROUP = "builtin"
     REGULAR_GROUP = "regular"
 
-    id = Column(db.Integer, primary_key=True)
+    id = primary_key("Group")
     data_sources = db.relationship(
         "DataSourceGroup", back_populates="group", cascade="all"
     )
-    org_id = Column(db.Integer, db.ForeignKey("organizations.id"))
+    org_id = Column(key_type("Organization"), db.ForeignKey("organizations.id"))
     org = db.relationship("Organization", back_populates="groups")
     type = Column(db.String(255), default=REGULAR_GROUP)
     name = Column(db.String(100))
@@ -290,7 +289,7 @@ class Group(db.Model, BelongsToOrgMixin):
     __tablename__ = "groups"
 
     def __str__(self):
-        return text_type(self.id)
+        return str(self.id)
 
     def to_dict(self):
         return {
@@ -319,12 +318,12 @@ class Group(db.Model, BelongsToOrgMixin):
     "id", "object_type", "object_id", "access_type", "grantor_id", "grantee_id"
 )
 class AccessPermission(GFKBase, db.Model):
-    id = Column(db.Integer, primary_key=True)
+    id = primary_key("AccessPermission")
     # 'object' defined in GFKBase
     access_type = Column(db.String(255))
-    grantor_id = Column(db.Integer, db.ForeignKey("users.id"))
+    grantor_id = Column(key_type("User"), db.ForeignKey("users.id"))
     grantor = db.relationship(User, backref="grantor", foreign_keys=[grantor_id])
-    grantee_id = Column(db.Integer, db.ForeignKey("users.id"))
+    grantee_id = Column(key_type("User"), db.ForeignKey("users.id"))
     grantee = db.relationship(User, backref="grantee", foreign_keys=[grantee_id])
 
     __tablename__ = "access_permissions"
@@ -405,7 +404,7 @@ class AnonymousUser(AnonymousUserMixin, PermissionsCheckMixin):
 class ApiUser(UserMixin, PermissionsCheckMixin):
     def __init__(self, api_key, org, groups, name=None):
         self.object = None
-        if isinstance(api_key, string_types):
+        if isinstance(api_key, str):
             self.id = api_key
             self.name = name
         else:

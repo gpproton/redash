@@ -1,22 +1,21 @@
+import { head, includes, trim, template, values } from "lodash";
 import React from "react";
-import { react2angular } from "react2angular";
-import { head, includes, trim, template } from "lodash";
-
-import { $route } from "@/services/ng";
-import { currentUser } from "@/services/auth";
-import navigateTo from "@/services/navigateTo";
-import notification from "@/services/notification";
-import { Alert as AlertService } from "@/services/alert";
-import { Query as QueryService } from "@/services/query";
+import PropTypes from "prop-types";
 
 import LoadingState from "@/components/items-list/components/LoadingState";
+import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
+import navigateTo from "@/components/ApplicationArea/navigateTo";
+
+import { currentUser } from "@/services/auth";
+import notification from "@/services/notification";
+import AlertService from "@/services/alert";
+import { Query as QueryService } from "@/services/query";
+import routes from "@/services/routes";
+
 import MenuButton from "./components/MenuButton";
 import AlertView from "./AlertView";
 import AlertEdit from "./AlertEdit";
 import AlertNew from "./AlertNew";
-
-import { routesToAngularRoutes } from "@/lib/utils";
-import PromiseRejectionError from "@/lib/promise-rejection-error";
 
 const MODES = {
   NEW: 0,
@@ -33,7 +32,19 @@ export function getDefaultName(alert) {
   return defaultNameBuilder(alert);
 }
 
-class AlertPage extends React.Component {
+class Alert extends React.Component {
+  static propTypes = {
+    mode: PropTypes.oneOf(values(MODES)),
+    alertId: PropTypes.string,
+    onError: PropTypes.func,
+  };
+
+  static defaultProps = {
+    mode: null,
+    alertId: null,
+    onError: () => {},
+  };
+
   _isMounted = false;
 
   state = {
@@ -46,25 +57,25 @@ class AlertPage extends React.Component {
 
   componentDidMount() {
     this._isMounted = true;
-    const { mode } = $route.current.locals;
+    const { mode } = this.props;
     this.setState({ mode });
 
     if (mode === MODES.NEW) {
       this.setState({
-        alert: new AlertService({
+        alert: {
           options: {
             op: ">",
             value: 1,
             muted: false,
           },
-        }),
+        },
         pendingRearm: 0,
         canEdit: true,
       });
     } else {
-      const { alertId } = $route.current.params;
+      const { alertId } = this.props;
       AlertService.get({ id: alertId })
-        .$promise.then(alert => {
+        .then(alert => {
           if (this._isMounted) {
             const canEdit = currentUser.canEdit(alert);
 
@@ -82,9 +93,9 @@ class AlertPage extends React.Component {
             this.onQuerySelected(alert.query);
           }
         })
-        .catch(err => {
+        .catch(error => {
           if (this._isMounted) {
-            throw new PromiseRejectionError(err);
+            this.props.onError(error);
           }
         });
     }
@@ -100,12 +111,11 @@ class AlertPage extends React.Component {
     alert.name = trim(alert.name) || getDefaultName(alert);
     alert.rearm = pendingRearm || null;
 
-    return alert
-      .$save()
-      .then(() => {
+    return AlertService.save(alert)
+      .then(alert => {
         notification.success("Saved.");
-        navigateTo(`/alerts/${alert.id}`, true, false);
-        this.setState({ mode: MODES.VIEW });
+        navigateTo(`alerts/${alert.id}`, true);
+        this.setState({ alert, mode: MODES.VIEW });
       })
       .catch(() => {
         notification.error("Failed saving alert.");
@@ -157,21 +167,19 @@ class AlertPage extends React.Component {
 
   delete = () => {
     const { alert } = this.state;
-    return alert.$delete(
-      () => {
+    return AlertService.delete(alert)
+      .then(() => {
         notification.success("Alert deleted successfully.");
-        navigateTo("/alerts");
-      },
-      () => {
+        navigateTo("alerts");
+      })
+      .catch(() => {
         notification.error("Failed deleting alert.");
-      }
-    );
+      });
   };
 
   mute = () => {
     const { alert } = this.state;
-    return alert
-      .$mute()
+    return AlertService.mute(alert)
       .then(() => {
         this.setAlertOptions({ muted: true });
         notification.warn("Notifications have been muted.");
@@ -183,8 +191,7 @@ class AlertPage extends React.Component {
 
   unmute = () => {
     const { alert } = this.state;
-    return alert
-      .$unmute()
+    return AlertService.unmute(alert)
       .then(() => {
         this.setAlertOptions({ muted: false });
         notification.success("Notifications have been restored.");
@@ -196,13 +203,13 @@ class AlertPage extends React.Component {
 
   edit = () => {
     const { id } = this.state.alert;
-    navigateTo(`/alerts/${id}/edit`, true, false);
+    navigateTo(`alerts/${id}/edit`, true);
     this.setState({ mode: MODES.EDIT });
   };
 
   cancel = () => {
     const { id } = this.state.alert;
-    navigateTo(`/alerts/${id}`, true, false);
+    navigateTo(`alerts/${id}`, true);
     this.setState({ mode: MODES.VIEW });
   };
 
@@ -233,47 +240,40 @@ class AlertPage extends React.Component {
     };
 
     return (
-      <div className="container alert-page">
-        {mode === MODES.NEW && <AlertNew {...commonProps} />}
-        {mode === MODES.VIEW && (
-          <AlertView canEdit={canEdit} onEdit={this.edit} muted={muted} unmute={this.unmute} {...commonProps} />
-        )}
-        {mode === MODES.EDIT && <AlertEdit cancel={this.cancel} {...commonProps} />}
+      <div className="alert-page">
+        <div className="container">
+          {mode === MODES.NEW && <AlertNew {...commonProps} />}
+          {mode === MODES.VIEW && (
+            <AlertView canEdit={canEdit} onEdit={this.edit} muted={muted} unmute={this.unmute} {...commonProps} />
+          )}
+          {mode === MODES.EDIT && <AlertEdit cancel={this.cancel} {...commonProps} />}
+        </div>
       </div>
     );
   }
 }
 
-export default function init(ngModule) {
-  ngModule.component("alertPage", react2angular(AlertPage));
-
-  return routesToAngularRoutes(
-    [
-      {
-        path: "/alerts/new",
-        title: "New Alert",
-        mode: MODES.NEW,
-      },
-      {
-        path: "/alerts/:alertId",
-        title: "Alert",
-        mode: MODES.VIEW,
-      },
-      {
-        path: "/alerts/:alertId/edit",
-        title: "Alert",
-        mode: MODES.EDIT,
-      },
-    ],
-    {
-      template: "<alert-page></alert-page>",
-      controller($scope, $exceptionHandler) {
-        "ngInject";
-
-        $scope.handleError = $exceptionHandler;
-      },
-    }
-  );
-}
-
-init.init = true;
+routes.register(
+  "Alerts.New",
+  routeWithUserSession({
+    path: "/alerts/new",
+    title: "New Alert",
+    render: pageProps => <Alert {...pageProps} mode={MODES.NEW} />,
+  })
+);
+routes.register(
+  "Alerts.View",
+  routeWithUserSession({
+    path: "/alerts/:alertId",
+    title: "Alert",
+    render: pageProps => <Alert {...pageProps} mode={MODES.VIEW} />,
+  })
+);
+routes.register(
+  "Alerts.Edit",
+  routeWithUserSession({
+    path: "/alerts/:alertId/edit",
+    title: "Alert",
+    render: pageProps => <Alert {...pageProps} mode={MODES.EDIT} />,
+  })
+);

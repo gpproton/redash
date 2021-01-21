@@ -1,8 +1,7 @@
+import { find } from "lodash";
 import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import cx from "classnames";
-import { react2angular } from "react2angular";
-import { find } from "lodash";
 import Input from "antd/lib/input";
 import Select from "antd/lib/select";
 import { Query } from "@/services/query";
@@ -12,19 +11,20 @@ import useSearchResults from "@/lib/hooks/useSearchResults";
 
 const { Option } = Select;
 function search(term) {
+  if (term === null) {
+    return Promise.resolve(null);
+  }
+
   // get recent
   if (!term) {
-    return Query.recent().$promise.then(results => {
-      const filteredResults = results.filter(item => !item.is_draft); // filter out draft
-      return Promise.resolve(filteredResults);
-    });
+    return Query.recent().then(results => results.filter(item => !item.is_draft)); // filter out draft
   }
 
   // search by query
-  return Query.query({ q: term }).$promise.then(({ results }) => Promise.resolve(results));
+  return Query.query({ q: term }).then(({ results }) => results);
 }
 
-export function QuerySelector(props) {
+export default function QuerySelector(props) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedQuery, setSelectedQuery] = useState();
   const [doSearch, searchResults, searching] = useSearchResults(search, { initialResults: [] });
@@ -157,9 +157,3 @@ QuerySelector.defaultProps = {
   className: null,
   disabled: false,
 };
-
-export default function init(ngModule) {
-  ngModule.component("querySelector", react2angular(QuerySelector));
-}
-
-init.init = true;

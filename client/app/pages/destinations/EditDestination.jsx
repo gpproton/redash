@@ -1,20 +1,22 @@
+import { get, find } from "lodash";
 import React from "react";
 import PropTypes from "prop-types";
-import { get, find } from "lodash";
-import { react2angular } from "react2angular";
+
 import Modal from "antd/lib/modal";
-import { Destination, IMG_ROOT } from "@/services/destination";
-import navigateTo from "@/services/navigateTo";
-import { $route } from "@/services/ng";
-import notification from "@/services/notification";
-import PromiseRejectionError from "@/lib/promise-rejection-error";
+import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
+import navigateTo from "@/components/ApplicationArea/navigateTo";
 import LoadingState from "@/components/items-list/components/LoadingState";
 import DynamicForm from "@/components/dynamic-form/DynamicForm";
 import helper from "@/components/dynamic-form/dynamicFormHelper";
 import wrapSettingsTab from "@/components/SettingsWrapper";
 
+import Destination, { IMG_ROOT } from "@/services/destination";
+import notification from "@/services/notification";
+import routes from "@/services/routes";
+
 class EditDestination extends React.Component {
   static propTypes = {
+    destinationId: PropTypes.string.isRequired,
     onError: PropTypes.func,
   };
 
@@ -29,46 +31,38 @@ class EditDestination extends React.Component {
   };
 
   componentDidMount() {
-    Destination.get({ id: $route.current.params.destinationId })
-      .$promise.then(destination => {
+    Destination.get({ id: this.props.destinationId })
+      .then(destination => {
         const { type } = destination;
         this.setState({ destination });
-        Destination.types(types => this.setState({ type: find(types, { type }), loading: false }));
+        Destination.types().then(types => this.setState({ type: find(types, { type }), loading: false }));
       })
-      .catch(error => {
-        // ANGULAR_REMOVE_ME This code is related to Angular's HTTP services
-        if (error.status && error.data) {
-          error = new PromiseRejectionError(error);
-        }
-        this.props.onError(error);
-      });
+      .catch(error => this.props.onError(error));
   }
 
   saveDestination = (values, successCallback, errorCallback) => {
     const { destination } = this.state;
     helper.updateTargetWithValues(destination, values);
-    destination.$save(
-      () => successCallback("Saved."),
-      error => {
-        const message = get(error, "data.message", "Failed saving.");
+    Destination.save(destination)
+      .then(() => successCallback("Saved."))
+      .catch(error => {
+        const message = get(error, "response.data.message", "Failed saving.");
         errorCallback(message);
-      }
-    );
+      });
   };
 
   deleteDestination = callback => {
     const { destination } = this.state;
 
     const doDelete = () => {
-      destination.$delete(
-        () => {
+      Destination.delete(destination)
+        .then(() => {
           notification.success("Alert destination deleted successfully.");
-          navigateTo("/destinations", true);
-        },
-        () => {
+          navigateTo("destinations");
+        })
+        .catch(() => {
           callback();
-        }
-      );
+        });
     };
 
     Modal.confirm({
@@ -91,6 +85,7 @@ class EditDestination extends React.Component {
       type,
       actions: [{ name: "Delete", type: "danger", callback: this.deleteDestination }],
       onSubmit: this.saveDestination,
+      defaultShowExtraFields: helper.hasFilledExtraField(type, destination),
       feedbackIcons: true,
     };
 
@@ -112,20 +107,13 @@ class EditDestination extends React.Component {
   }
 }
 
-export default function init(ngModule) {
-  ngModule.component("pageEditDestination", react2angular(wrapSettingsTab(null, EditDestination)));
+const EditDestinationPage = wrapSettingsTab("AlertDestinations.Edit", null, EditDestination);
 
-  return {
-    "/destinations/:destinationId": {
-      template: '<page-edit-destination on-error="handleError"></page-edit-destination>',
-      title: "Alert Destinations",
-      controller($scope, $exceptionHandler) {
-        "ngInject";
-
-        $scope.handleError = $exceptionHandler;
-      },
-    },
-  };
-}
-
-init.init = true;
+routes.register(
+  "AlertDestinations.Edit",
+  routeWithUserSession({
+    path: "/destinations/:destinationId",
+    title: "Alert Destinations",
+    render: pageProps => <EditDestinationPage {...pageProps} />,
+  })
+);
